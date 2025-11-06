@@ -1,0 +1,58 @@
+/*
+AAKASH JANA AAJ284 11297343
+NANDISH JHA NAJ474 11282001
+*/
+
+xv6 kernel is booting
+
+init: starting sh
+$ forktest
+fork test
+fork test OK
+$ forktest
+fork test
+fork test OK
+$ echo hello world
+hello world
+$ echo Hello Professor , did the Blue Jays win yet?
+too many args
+$ echo Im sure they won!
+Im sure they won!
+$ edftest
+
+--- EDF scheduler demonstration ---
+Spawning 4 jobs with different deadlines, priorities, and start times.
+Earlier deadlines (and already-released start times) should generally finish first.
+
+parent: created job 0 (pid=131): d=80, prio=1, start_delay=10, work=60000000
+parent: created job 1 (pid=132): d=40, prio=2, start_delay=0, work=50000000
+parent: created job 2 (pid=133): d=60, prio=0, start_delay=5, work=55000000
+parent: created job 3 (pid=134): d=80, prio=0, start_delay=0, work=65000000
+
+parent: waiting for children to finish...
+hint: jobs with earlier deadlines job 0: set deadline=80, prio=1, start_time=475 (now=465, delay=10)
+job 0: kernel reports deadline=80, prio=1, start_time=475
+job 0: starting work (60000000 units)
+job 1: set deadline=40, prio=2, start_time=466 (now=466, delay=0)
+job 1: kernel reports deadline=40, prio=2, start_time=466
+job 1: starting work (50000000 units)
+job 2: set deadline=60, prio=0, start_time=472 (now=467, delay=5)
+job 2: kernel reports deadline=60, prio=0, start_time=472
+job 2: starting work (55000000 units)
+job 3: set deadline=80, prio=0, start_time=468 (now=468, delay=0)
+job 3: kernel reports deadline=80, prio=0, start_time=468
+job 3: starting work (65000000 units)
+and earlier start times should tend to exit first.
+
+job 1: finished work (deadline=40, prio=2, start_time=466)
+parent: job 1 (pid=132) completed as #1 (exit status=0)
+job 2: finished work (deadline=60, prio=0, start_time=472)
+parent: job 2 (pid=133) completed as #2 (exit status=0)
+job 3: finished work (deadline=80, prio=0, start_time=468)
+parent: job 3 (pid=134) completed as #3 (exit status=0)
+job 0: finished work (deadline=80, prio=1, start_time=475)
+parent: job 0 (pid=131) completed as #4 (exit status=0)
+
+--- EDF demo done ---
+Inspect the completion order above vs. the configured deadlines/start times.
+$ 
