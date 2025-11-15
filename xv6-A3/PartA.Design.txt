@@ -1,0 +1,497 @@
+/*
+AAKASH JANA AAJ284 11297343
+NANDISH JHA NAJ474 11282001
+*/
+
+
+
+===============================================================================
+CMPT 332 Assignment 3 - EDF Scheduler with Deferred Activation
+Design Document - Part A
+Group 01, Fall 2025
+===============================================================================
+
+OVERVIEW
+========
+
+This document describes the implementation of an Earliest Deadline First (EDF)
+scheduler in xv6 with support for deferred task activation. The scheduler
+maintains a global ready queue ordered by task deadline and priority, and
+supports processes with specified start times that become eligible for
+scheduling only after their start_time has been reached.
+
+===============================================================================
+1. DESIGN GOALS AND CONSTRAINTS
+===============================================================================
+
+1.1 Primary Objectives
+   - Implement EDF (Earliest Deadline First) scheduling policy
+   - Support per-process deadline and priority attributes
+   - Support deferred activation via start_time attribute
+   - Maintain process ordering in ready queue based on (deadline, priority)
+   - Prevent double insertion of processes into ready queue
+
+1.2 Key Constraints
+   - NPROC is small, allowing for simple O(NPROC) scans in scheduler loop
+   - Must maintain synchronization via spinlocks to prevent race conditions
+   - No new process states introduced; deferred activation uses RUNNABLE state
+   - Must integrate cleanly with existing xv6 process management
+
+===============================================================================
+2. DATA STRUCTURES
+===============================================================================
+
+2.1 struct proc (kernel/proc.h)
+
+   Added fields to per-process state:
+
+   int deadline;              /* EDF deadline value for process */
+   int priority;              /* Secondary tie-breaker for same deadline */
+   int start_time;            /* Absolute time (ticks) when process eligible */
+   int in_rq;                 /* Flag: is process currently in ready queue? */
+
+   Fields initialized in allocproc() to:
+      - deadline = 0
+      - priority = 0
+      - start_time = 0 (immediate eligibility)
+      - in_rq = 0 (not in queue initially)
+
+2.2 struct sched_attr (kernel/proc.h)
+
+   User-space scheduling attribute structure:
+
+   int deadline;              /* Deadline value to set for process */
+   int priority;              /* Priority value to set for process */
+   int start_time;            /* Absolute start time in ticks */
+
+   This structure is passed to/from user-space via setSchedAttr() and
+   getSchedAttr() system calls.
+
+2.3 struct ready_queue (kernel/proc.h)
+
+   Global EDF ready queue:
+
+   struct proc *procs[NPROC]; /* Array of process pointers */
+   int count;                 /* Number of processes in queue */
+
+   Protected by rq_lock spinlock to ensure atomic operations.
+   Processes are stored in sorted order: earliest deadline first,
+   with priority as tie-breaker.
+
+2.4 Global Synchronization Objects (kernel/proc.c)
+
+   struct ready_queue rq;     /* Global ready queue instance */
+   struct spinlock rq_lock;   /* Lock protecting ready queue */
+
+===============================================================================
+3. SCHEDULER ALGORITHM
+===============================================================================
+
+3.1 Scheduler Loop Architecture
+
+   The scheduler() function implements the following algorithm:
+
+   ========== BEGIN PSEUDOCODE ==========
+
+   scheduler():
+     FOR EACH CPU:
+       loop forever:
+         1. Enable interrupts, then disable them
+            (Prevent deadlock, manage race conditions)
+
+         2. DEFERRED ACTIVATION SCAN:
+            - Read current time (ticks) safely under tickslock
+            - Scan entire process table:
+              FOR each process p in proc[0..NPROC-1]:
+                acquire(p->lock)
+                IF p->state == RUNNABLE AND p->in_rq == 0 AND \
+                  p->start_time <= now:
+                  - Call rq_insert(p) to add to ready queue
+                release(p->lock)
+
+            This scan activates processes whose start time has arrived,
+            making them eligible for scheduling.
+
+         3. EDF DEQUEUE:
+            - Acquire rq_lock
+            - p = rq_dequeue() [pop earliest deadline process]
+            - Release rq_lock
+            - IF p != NULL:
+              * Acquire p->lock
+              * IF p->state == RUNNABLE:
+                  - p->state = RUNNING
+                  - c->proc = p
+                  - swtch(&c->context, &p->context) [run process]
+                  - c->proc = 0
+              * Release p->lock
+            - ELSE:
+              * asm volatile("wfi") [wait for interrupt]
+
+   ========== END PSEUDOCODE ==========
+
+3.2 Key Design Decisions
+
+   a) Deferred Activation Strategy:
+      - Processes with future start_time remain RUNNABLE but not in queue
+      - No new process state required
+      - Scheduler scans process table each iteration to detect arrivals
+      - O(NPROC) scan is acceptable given small NPROC value
+
+   b) Double Insertion Prevention:
+      - in_rq flag tracks whether process is in ready queue
+      - Checked in rq_insert() to return early if already queued
+      - Prevents race conditions during concurrent activation
+
+   c) EDF Ordering:
+      - Primary sort key: deadline (earlier = higher priority)
+      - Secondary sort key: priority value (lower = higher priority)
+      - Maintains sorted order during insertion
+
+   d) Locking Strategy:
+      - tickslock protects global ticks counter
+      - rq_lock protects ready queue structure
+      - p->lock protects individual process state
+      - Lock order: rq_lock -> p->lock (consistent ordering)
+
+================================================================================
+4. KERNEL MODIFICATIONS
+================================================================================
+
+4.1 Memory/Data Structure Changes (kernel/proc.h)
+
+   File: kernel/proc.h
+   
+   Changes:
+   - Added deadline, priority, start_time, in_rq fields to struct proc
+   - Added start_time field to struct sched_attr
+   - Global ready_queue structure defined
+   - Global rq_lock spinlock declared
+
+4.2 Process Management (kernel/proc.c)
+
+   File: kernel/proc.c
+   
+   4.2.1 Initialization (procinit):
+         - Initialize rq_lock with initlock(&rq_lock, "ready_queue")
+         - Initialize rq.count = 0
+   
+   4.2.2 Process Allocation (allocproc):
+         - Set p->deadline = 0
+         - Set p->priority = 0
+         - Set p->start_time = 0
+         - Set p->in_rq = 0
+   
+   4.2.3 Process Cleanup (freeproc):
+         - Clear p->deadline = 0
+         - Clear p->priority = 0
+         - Clear p->start_time = 0
+         - Clear p->in_rq = 0
+   
+   4.2.4 Ready Queue Operations:
+
+         rq_insert(struct proc *p):
+         ────────────────────────
+         - Acquire rq_lock
+         - Check if p->in_rq == 1; if yes, return (prevent double insertion)
+         - Read current ticks safely under tickslock
+         - If p->start_time > now: release rq_lock, return (not yet eligible)
+         - Check queue overflow (rq.count >= NPROC)
+         - Binary search for insertion position based on (deadline, priority)
+         - Insert process at correct position
+         - Set p->in_rq = 1
+         - Increment rq.count
+         - Release rq_lock
+
+         rq_remove(struct proc *p):
+         ───────────────────────────
+         - Acquire rq_lock
+         - Search for process p in queue
+         - If found:
+           * Shift remaining processes forward to remove gap
+           * Set p->in_rq = 0
+           * Decrement rq.count
+         - Release rq_lock
+
+         rq_dequeue():
+         ─────────────
+         - Check if rq.count == 0; if yes, return NULL
+         - Get p = rq.procs[0] (earliest deadline process)
+         - Set p->in_rq = 0
+         - Shift all remaining processes forward
+         - Decrement rq.count
+         - Return p
+
+   4.2.5 Process Creation (kfork):
+         - After setting RUNNABLE: call rq_insert(np)
+         - This respects start_time; if future, process stays in RUNNABLE
+           but not in queue until scheduler's deferred activation scan
+
+   4.2.6 Wake Up (wakeup, kkill):
+         - After setting RUNNABLE: call rq_insert(p)
+         - Same logic as kfork
+
+   4.2.7 Yield (yield):
+         - After setting RUNNABLE: call rq_insert(p)
+         - Same logic as kfork
+
+   4.2.8 Scheduler Main Loop (scheduler):
+         - DEFERRED ACTIVATION SCAN:
+           * For each process in proc table:
+             - If RUNNABLE && !in_rq && start_time <= now: insert into queue
+           * This allows processes to transition from "waiting" to "eligible"
+         
+         - EDF DEQUEUE:
+           * Pop earliest deadline process from rq
+           * Run it if available, else wait for interrupt
+
+4.3 System Calls (kernel/sysproc.c)
+
+   File: kernel/sysproc.c
+   
+   4.3.1 sys_setSchedAttr():
+         - Read user-space struct sched_attr pointer from argument 0
+         - Copy struct from user-space to kernel via copyin()
+         - Acquire current process lock
+         - Set p->deadline = attr.deadline
+         - Set p->priority = attr.priority
+         - Set p->start_time = attr.start_time
+         - Release process lock
+         - Return 0 on success, -1 on error
+
+   4.3.2 sys_getSchedAttr():
+         - Read user-space struct sched_attr pointer from argument 0
+         - Acquire current process lock
+         - Read p->deadline into local attr
+         - Read p->priority into local attr
+         - Read p->start_time into local attr
+         - Release process lock
+         - Copy struct to user-space via copyout()
+         - Return 0 on success, -1 on error
+
+4.4 System Call Infrastructure (kernel/syscall.c, user/usys.pl)
+
+   Files: kernel/syscall.c, user/usys.pl, user/user.h
+   
+   Changes:
+   - extern declaration for sys_setSchedAttr and sys_getSchedAttr
+   - Array entry: [SYS_setSchedAttr] = sys_setSchedAttr
+   - Array entry: [SYS_getSchedAttr] = sys_getSchedAttr
+   - Trace string entries added
+   - usys.pl generates assembly stubs for new syscalls
+   - user.h declares user-facing function signatures
+
+===============================================================================
+5. SCHEDULER TESTS
+===============================================================================
+
+5.1 Test Program: user/edftest.c
+
+   Purpose: Demonstrate EDF scheduling with deferred activation
+
+   Test Approach:
+   - Spawns TASK_COUNT (4) child processes
+   - Each child sets its own deadline, priority, and start_time
+   - Performs CPU-intensive work
+   - Prints start/finish times to verify EDF ordering
+
+   Test Configuration:
+   
+   Task 0: deadline=100, priority=1, start_time=now+0, work=50M units
+   Task 1: deadline=50,  priority=2, start_time=now+0, work=40M units
+   Task 2: deadline=75,  priority=1, start_time=now+0, work=45M units
+   Task 3: deadline=100, priority=0, start_time=now+0, work=55M units
+
+   Expected Behavior (EDF Ordering):
+   1. Task 1 should run first (deadline=50, earliest)
+   2. Task 2 should run next (deadline=75)
+   3. Task 0 or Task 3 (both deadline=100, Task 3 has lower priority value,
+      runs first)
+   4. Remaining task completes last
+
+   Verification:
+   - Observe console output to confirm completion order
+   - EDF working correctly if tasks complete in deadline order
+   - Deferred activation working if start_time is respected
+
+5.2 How to Run Tests
+
+   Command: make qemu
+   
+   From xv6 prompt: edftest
+   
+   Expected Output:
+   - Task registration messages showing deadline/priority/start_time
+   - Kernel acknowledgment of scheduling attributes
+   - CPU work progress messages
+   - Completion messages in EDF order
+   - Summary of actual completion order vs. expected order
+
+5.3 Test Validation Criteria
+
+   a) Deadline Ordering: Tasks complete in order of deadline
+   b) Priority Tie-Breaking: When deadlines equal, lower priority value runs
+      first
+   c) Start Time Respect: Tasks don't start before their start_time
+   d) No Lost Tasks: All tasks complete and terminate normally
+   e) System Stability: No kernel panics or deadlocks
+
+===============================================================================
+6. SYNCHRONIZATION AND CORRECTNESS
+===============================================================================
+
+6.1 Race Condition Analysis
+
+   a) Ready Queue Integrity:
+      - rq_lock protects all queue operations
+      - Insertion/removal/dequeue are atomic under lock
+
+   b) Process State Consistency:
+      - p->lock protects state transitions
+      - start_time checked under both tickslock (for current time) and after
+        process lock (for process fields)
+
+   c) Double Insertion Prevention:
+      - in_rq flag updated atomically with queue modification
+      - Checked at start of rq_insert() under rq_lock
+
+   d) Timer Safety:
+      - ticks counter read safely under tickslock
+      - Compared with start_time to determine eligibility
+
+6.2 Deadlock Prevention
+
+   Lock Ordering (always acquire in this order):
+   1. tickslock (if needed)
+   2. rq_lock (if needed)
+   3. p->lock (if needed)
+
+   Scheduler respects this ordering throughout all operations.
+
+6.3 Fairness Guarantees
+
+   - EDF guarantees earliest deadline gets preference
+   - Priority field provides secondary fairness criterion
+   - Deferred activation ensures processes aren't starved by future-time
+      restriction
+
+===============================================================================
+7. LIMITATIONS AND FUTURE IMPROVEMENTS
+===============================================================================
+
+7.1 Current Limitations
+
+   a) O(NPROC) per-iteration scan in scheduler
+      - Acceptable for NPROC=64 but would not scale to thousands of processes
+      - Could use event-driven approach for real-time systems
+
+   b) Fixed-size queue (NPROC)
+      - Cannot have more than NPROC processes ready at once
+      - xv6 architectural constraint
+
+   c) Integer time representation
+      - start_time is int (matching xv6's ticks type)
+      - Could overflow after long runs (not an issue for typical test duration)
+
+   d) No preemption between tasks
+      - Process runs until it yields or blocks
+      - Real EDF systems often preempt lower-deadline tasks for higher-deadline
+         tasks
+      - Would require timer-based preemption
+
+7.2 Possible Extensions
+
+   a) Efficient activation
+      - Use min-heap or event queue instead of O(NPROC) scan
+      - Trade-off: implementation complexity vs. performance
+
+   b) Absolute vs. Relative Time
+      - Currently uses absolute ticks; could support relative offsets
+
+   c) Per-CPU Ready Queues
+      - Current design uses single global queue
+      - Could parallelize to improve multi-CPU throughput
+
+===============================================================================
+8. TESTING METHODOLOGY
+===============================================================================
+
+8.1 Unit Tests (Implicit)
+
+   Each kernel function is tested through edftest invocation:
+   - rq_insert() tested by task registration
+   - rq_remove() tested by task termination
+   - Deadline ordering tested by completion sequence
+   - start_time respected by observing activation times
+
+8.2 Integration Testing
+
+   edftest program performs end-to-end testing:
+   - Multiple tasks with different attributes
+   - System calls setSchedAttr/getSchedAttr
+   - Scheduler loop integration
+   - Process lifecycle (fork → scheduling → exit)
+
+8.3 Stress Testing
+
+   Potential enhancements (not implemented):
+   - High task count (near NPROC limit)
+   - Frequent priority changes
+   - Rapid process creation/destruction
+   - Mixed work patterns (CPU vs. I/O bound)
+
+===============================================================================
+9. CODE REVIEW CHECKLIST
+===============================================================================
+
+[YES] Data structures defined (deadline, priority, start_time, in_rq)
+[YES] Ready queue initialization in procinit()
+[YES] Ready queue operations (insert, remove, dequeue)
+[YES] Deferred activation in scheduler loop
+[YES] Process creation respects start_time
+[YES] System calls setSchedAttr/getSchedAttr implemented
+[YES] Synchronization primitives (rq_lock, tickslock)
+[YES] Test program (edftest.c)
+[YES] No double insertions (in_rq flag)
+[YES] EDF ordering maintained (deadline, then priority)
+[YES] Lock ordering consistent throughout
+
+===============================================================================
+10. FILES MODIFIED
+===============================================================================
+
+Kernel Files:
+   - kernel/proc.h       : Data structure definitions
+   - kernel/proc.c       : Ready queue operations, scheduler loop, process
+                           management
+   - kernel/sysproc.c    : System call implementations (setSchedAttr,
+                           getSchedAttr)
+   - kernel/syscall.c    : System call registration
+   - user/usys.pl        : System call stubs generation
+
+User-Space Files:
+   - user/user.h         : Function declarations
+   - user/edftest.c      : Test program
+
+===============================================================================
+11. SUMMARY
+===============================================================================
+
+This implementation provides a working EDF scheduler with deferred activation
+for xv6. The key innovation is the deferred activation mechanism that allows
+processes to have a specified start_time without introducing new process
+states. The scheduler periodically scans the process table to activate
+processes whose start_time has arrived, maintaining the invariant that
+the ready queue contains only processes that are eligible to run.
+
+The implementation prioritizes correctness and clarity over performance:
+- Simple O(NPROC) scan rather than complex data structures
+- Clear lock ordering prevents deadlocks
+- Straightforward algorithm easy to verify and test
+
+The test program (edftest.c) provides a practical demonstration of the
+scheduler in action, allowing verification that processes complete in
+the expected EDF order.
+
+===============================================================================
+End of Design Document
+===============================================================================
