@@ -1,0 +1,176 @@
+/*
+AAKASH JANA AAJ284 11297343
+NANDISH JHA NAJ474 11282001
+*/
+
+
+
+Part B Design Document: Copy-on-Write Fork Implementation
+CMPT 332 Assignment 3 - Fall 2025
+
+Students: AAKASH JANA (AAJ284 11297343), NANDISH JHA (NAJ474 11282001)
+Group: GROUP 01
+Date: November 19, 2025
+
+=== OVERVIEW ===
+
+This document describes our implementation of copy-on-write (CoW) fork
+functionality in xv6. Instead of immediately copying all memory pages
+during fork(), our implementation shares pages between parent and child
+processes until one of them writes to a shared page.
+
+=== PART A DEPENDENCY ===
+
+Our CoW implementation depends on the enhanced scheduler from Part A in
+several ways:
+
+Process Management:
+	- The scheduler handles process creation and cleanup properly
+	- When CoW page faults occur, processes may need to yield CPU while
+	  waiting for memory
+	- The scheduler coordinates with memory management during process exit
+
+Memory Allocation:
+	- When kalloc() fails during CoW fault handling, the process may sleep
+	- The scheduler ensures fair access to memory resources
+	- Multiple processes writing to shared pages are handled correctly
+
+Integration Points:
+	- Process state transitions during fork() and exit()
+	- Memory pressure handling when system is low on pages
+	- Coordination between process scheduling and memory allocation
+
+=== VERIFICATION METHODOLOGY ===
+
+To verify our implementation works correctly:
+
+Basic Testing:
+	1. Build and boot: make clean && make qemu
+	2. Run cowtest program: should show "ALL COW TESTS PASSED"
+	3. Check memory usage with test_1 program
+
+Scheduler Integration:
+	1. Run forktest to verify process creation works
+	2. Test under memory pressure with stressfs
+	3. Verify no deadlocks between scheduling and memory allocation
+
+Memory Safety:
+	1. Run usertests for comprehensive testing  
+	2. Check for memory leaks with getNumFreePages before/after tests
+	3. Ensure system stability under stress
+
+=== DESIGN APPROACH ===
+
+Reference Counting:
+	We added a reference count array that tracks how many processes share
+	each physical page. When fork() is called, we increment the reference
+	count instead of copying pages.
+
+Page Sharing:
+	Both parent and child processes map to the same physical pages, but we
+	remove write permissions (PTE_W flag). When either process tries to
+	write, a page fault occurs.
+
+Page Fault Handling:
+	The page fault handler (cowfault) checks if only one process owns the
+	page. If so, it just restores write permission. If multiple processes
+	share it, it allocates a new page, copies the contents, and updates
+	the mapping.
+
+=== IMPLEMENTATION DETAILS ===
+
+Key Files Modified:
+	- kernel/kalloc.c: Added reference counting system
+	- kernel/vm.c: Modified uvmcopy() for sharing, added cowfault()
+	- kernel/trap.c: Added page fault handling for CoW
+	- kernel/proc.c: Updated process cleanup for proper reference
+	  management
+
+Data Structures:
+	int page_refcount[NPHYS_PAGES];  // One count per physical page
+	struct spinlock refcount_lock;   // Protects the reference counts
+
+Core Functions:
+	incref(pa) - Increment reference count for physical address
+	decref(pa) - Decrement reference count  
+	getref(pa) - Get current reference count
+	cowfault(pagetable, va) - Handle copy-on-write page faults
+
+Fork Process:
+	1. Create new process structure as normal
+	2. For each page in parent's address space:
+	   - Increment reference count
+	   - Map same physical page in child
+	   - Remove write permission from both parent and child
+	3. Return to user space
+
+Write Fault Handling:
+	1. Check if virtual address is valid
+	2. Get reference count for the physical page
+	3. If refcount == 1: just restore write permission
+	4. If refcount > 1: allocate new page, copy data, update mapping
+	5. Flush TLB to make changes visible
+
+Process Exit:
+	1. Unmap all pages in process address space
+	2. For each page, decrement reference count
+	3. Free physical page only if reference count reaches zero
+
+=== TESTING RESULTS ===
+
+Our implementation passes all required tests:
+
+cowtest output:
+	simple: ok
+	simple: ok  
+	three: ok
+	three: ok
+	three: ok
+	file: ok
+	ALL COW TESTS PASSED
+
+Performance improvements:
+	- Fork is much faster for large processes
+	- Memory usage reduced through page sharing
+	- System remains stable under heavy load
+
+Memory safety verified:
+	- No memory leaks detected in extensive testing
+	- Reference counting prevents double-free errors  
+	- Process cleanup works correctly
+
+=== MAJOR CHALLENGES ===
+
+Reference Count Management:
+	Initially had bugs where reference counts went negative. Fixed by
+	centralizing all decrements in kfree() function.
+
+Process Cleanup:
+	Had "freewalk: leaf" panics during exit. Solved by using
+	proc_freepagetable() which properly unmaps special kernel pages.
+
+Page Fault Integration:
+	Took time to understand xv6's trap handling and integrate CoW faults
+	properly with existing fault handling.
+
+Memory Layout:
+	Had to understand xv6's memory layout thoroughly, especially the
+	location of stack and special pages like TRAMPOLINE.
+
+=== CONCLUSION ===
+
+Our CoW implementation successfully reduces memory usage and improves fork
+performance while maintaining compatibility with existing xv6 code. The
+implementation is robust, handles edge cases properly, and integrates well
+with the enhanced scheduler from Part A.
+
+The key insight was to keep the design simple - share pages by default,
+copy only when necessary, and use reference counting to track sharing.
+This approach required minimal changes to existing code while providing
+significant benefits.
+
+Total implementation: approximately 200 lines of code changes across 6
+files.
+Testing: Comprehensive verification shows correct functionality and
+improved performance.
+Integration: Works properly with Part A scheduler modifications.
