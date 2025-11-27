@@ -1,0 +1,143 @@
+/*
+AAKASH JANA AAJ284 11297343
+NANDISH JHA NAJ474 11282001
+*/
+
+
+
+commit 61880cff4c1f1581d2abc5eca551be45e9367f94
+Author: naj474 <naj474@usask.ca>
+Date:   Wed Nov 19 18:06:07 2025 -0600
+
+    Last file: Git log.
+
+commit 44a96dcf074d7ab8c7d644fdc67691d898ae34c2
+Merge: 60a9eb9 eb6f9e2
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 18:01:40 2025 -0600
+
+    Merge branch 'local-1'
+    A minor name commnent at the top of the file
+
+commit eb6f9e2d6b9d16334388a79831dd64250e33ade0
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 18:00:51 2025 -0600
+
+    Tried to fix the merge conflicts.
+
+commit d1ab30a47f2219f75dce9986b92a1e4b7924beaa
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 17:38:39 2025 -0600
+
+    Remove deleted test_input.txt file
+
+commit 0c07777a08f3b4e0ff3da97fcc74b58930c17de7
+Merge: dba5819 1824e12
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 17:33:38 2025 -0600
+
+    Merge branch 'main' into local-1
+
+commit 60a9eb931e1991c5ab7e1db6370c9746217e40e3
+Author: naj474 <naj474@usask.ca>
+Date:   Wed Nov 19 15:55:17 2025 -0600
+
+    Minor changes.
+
+commit dba5819e963ef492f0a4e23ba80d04beb89b5db8
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 15:54:15 2025 -0600
+
+    has errors in COW
+
+commit 1824e1247c9d448ad6b41010bb85f7fc6b13ad50
+Author: naj474 <naj474@usask.ca>
+Date:   Wed Nov 19 15:53:07 2025 -0600
+
+    Merge fixing.
+
+commit 69f4aedccd3ab879eb8199ff1781e0dfa13b00f8
+Merge: 66b07e3 fc109ad
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 14:58:08 2025 -0600
+
+    Merge branch 'main' into local-1
+
+commit 66b07e35da942fabb3fa619d5731e4de38d656ac
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 14:51:45 2025 -0600
+
+    Phew finally figured out why there was panic acquire
+
+commit ed7e38c662bede853281d9fc03b002962a05447c
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 12:44:44 2025 -0600
+
+    Added start time logic in sched_attr , panic acquire
+
+commit d687ec5a21a1b56d899ae4412709bfb39c2e4ab9
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Wed Nov 19 11:58:28 2025 -0600
+
+    Changed ready queue lock ordering to avoid deadlock
+
+commit fc109ad9eab71dd83e4787c6943e1be5073c7ba3
+Author: naj474 <naj474@usask.ca>
+Date:   Wed Nov 19 11:32:25 2025 -0600
+
+    Finished touch ups for the text files and design documents.
+
+commit 5a4d81932291abe830babfc3d2c58db78b9e48b8
+Author: Aakash Jana <aaj284@usask.ca>
+Date:   Tue Nov 18 20:17:39 2025 -0600
+
+    EDF algorithm working without start time logic implemented
+    1) rq lock acquired outside queue functions need to relocate inside queue functions to reduce repeating code
+
+commit 02c2f748909b2b59b498e64fb8ff04373e3b9b47
+Author: naj474 <naj474@usask.ca>
+Date:   Tue Nov 18 10:55:49 2025 -0600
+
+    Fixed a big and pushing working version.
+
+commit 4f91b78223be3a5a1f54405cdc5120abf7f31e1d
+Author: naj474 <naj474@usask.ca>
+Date:   Sun Nov 16 14:42:08 2025 -0600
+
+    Added trap handling when all the pages are read only, preventing the page fault from occuring.
+
+commit 81931f985fe8403a6a46047604d253d2c144be83
+Author: naj474 <naj474@usask.ca>
+Date:   Sun Nov 16 13:32:43 2025 -0600
+
+    Fixed a bug in freerange() in kalloc.c
+
+commit 4d474d817b3245904736d642dda44d4e6e4165c0
+Author: naj474 <naj474@usask.ca>
+Date:   Sun Nov 16 13:25:43 2025 -0600
+
+    Updated the kalloc.c file - (1) Ref count to be 1 when adding a page using kalloc(); (2) Ref count decrement and free the page in the kfree().
+
+commit e266fcd80c72285cfe9f84860ea367d3979ea5c5
+Author: naj474 <naj474@usask.ca>
+Date:   Sun Nov 16 12:50:30 2025 -0600
+
+    Fixed and tested the function that gets number of pages that are free (getFreeNumPages).
+
+commit 250bf2e549a110c58822b38b521a47e421c778d1
+Author: naj474 <naj474@usask.ca>
+Date:   Sun Nov 16 10:48:16 2025 -0600
+
+    Added function prototype, mapping and syscall number in syscal c and h files.
+
+commit fddf383e7b29f563b1e57ef63fe8162beaa54c58
+Author: naj474 <naj474@usask.ca>
+Date:   Sun Nov 16 10:22:14 2025 -0600
+
+    Performed a make clean to remove *.o files; Added a function that counts how many pages are free and added a system call handler for that kernel function.
+
+commit 4fbe5d5332c6039a4f8fbee8f468dc247009c143
+Author: naj474 <naj474@usask.ca>
+Date:   Sun Nov 16 08:02:09 2025 -0600
+
+    Initial Commit.
